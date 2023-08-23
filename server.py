@@ -66,7 +66,8 @@ def playNext(guild: Guild):
     del playingLists[id][0]
     try:
         YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
-        get(client.voice_clients, guild=guild).play(FFmpegPCMAudio(executable="ffmpeg", source=filename), after=lambda x: playNext(guild=guild))
+        voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+        voiceClient.play(source=FFmpegPCMAudio(source=filename), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
 
@@ -92,17 +93,20 @@ async def play(ctx: Context, url: str):
 
 @client.command(help="暫停播放")
 async def pause(ctx: Context):
-    get(client.voice_clients, guild=ctx.guild).pause()
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.pause()
 
 
 @client.command(help="繼續播放")
 async def resume(ctx: Context):
-    get(client.voice_clients, guild=ctx.guild).resume()
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.resume()
 
 
 @client.command(help="跳過當前曲目")
 async def skip(ctx: Context):
-    get(client.voice_clients, guild=ctx.guild).stop()
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.stop()
 
 
 @client.command(help="顯示音樂清單")
