@@ -124,7 +124,7 @@ async def list(ctx: Context):
     await ctx.send(content=result)
 
 
-@client.command(help="隨機播放")
+@client.command(help="打亂音樂清單")
 async def shuffle(ctx: Context):
     random.shuffle(x=playingLists[ctx.guild.id])
 
