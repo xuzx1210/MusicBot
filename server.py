@@ -110,24 +110,6 @@ async def play(ctx: Context, url: str):
     playNext(guild=guild)
 
 
-@client.command(help="暫停播放")
-async def pause(ctx: Context):
-    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
-    voiceClient.pause()
-
-
-@client.command(help="繼續播放")
-async def resume(ctx: Context):
-    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
-    voiceClient.resume()
-
-
-@client.command(help="跳過當前曲目")
-async def skip(ctx: Context):
-    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
-    voiceClient.stop()
-
-
 @client.command(help="顯示音樂清單")
 async def list(ctx: Context):
     id = ctx.guild.id
@@ -148,14 +130,32 @@ async def list(ctx: Context):
     await ctx.send(content=result)
 
 
+@client.command(help="清空音樂清單")
+async def clear(ctx: Context):
+    playQueues[ctx.guild.id] = []
+
+
 @client.command(help="打亂音樂清單")
 async def shuffle(ctx: Context):
     random.shuffle(x=playQueues[ctx.guild.id])
 
 
-@client.command(help="清空音樂清單")
-async def clear(ctx: Context):
-    playQueues[ctx.guild.id] = []
+@client.command(help="暫停播放")
+async def pause(ctx: Context):
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.pause()
+
+
+@client.command(help="繼續播放")
+async def resume(ctx: Context):
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.resume()
+
+
+@client.command(help="跳過當前曲目")
+async def skip(ctx: Context):
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    voiceClient.stop()
 
 
 def main():
