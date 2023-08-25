@@ -10,6 +10,7 @@ from discord.utils import get
 from discord.voice_client import VoiceClient
 from dotenv import load_dotenv
 from pytube import YouTube
+from pytube.contrib.playlist import Playlist
 
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
 playingLists = {}  # dict[guildId, list]
@@ -25,13 +26,15 @@ async def on_ready():
 @client.command(help="使機器人加入您當前的語音頻道")
 async def join(ctx: Context):
     voiceState: VoiceState = ctx.author.voice
+    guild: Guild = ctx.guild
+
     if voiceState == None:
         await ctx.send(content="您尚未連線至任何語音頻道")
         return
-    guild: Guild = ctx.guild
     if get(client.voice_clients, guild=guild) != None:
         await ctx.send(content="機器人已連線至某語音頻道，請先使用 'leave' 指令再重新使用 'join' 指令")
         return
+
     await voiceState.channel.connect()
     playingLists[guild.id] = []
 
@@ -39,29 +42,33 @@ async def join(ctx: Context):
 @client.command(help="使機器人離開任何語音頻道")
 async def leave(ctx: Context):
     guild: Guild = ctx.guild
-    id = guild.id
     voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    id = guild.id
+
     if voiceClient == None:
         await ctx.send(content="機器人尚未連線至任何語音頻道")
         return
+
     playingLists[id] = []
     voiceClient.stop()
     playingLists.pop(id)
     await voiceClient.disconnect()
-    filename = str(id)+".mp4"
+    filename = "music/" + str(id) + ".mp4"
     if exists(path=filename):
         remove(path=filename)
 
 
 def playNext(guild: Guild):
     id = guild.id
-    filename = str(id)+".mp4"
+    filename = "music/" + str(id) + ".mp4"
     if exists(path=filename):
         remove(path=filename)
+
     if id not in playingLists:
         return
     if len(playingLists[id]) == 0:
         return
+
     url = playingLists[id][0]
     del playingLists[id][0]
     try:
@@ -77,6 +84,7 @@ async def play(ctx: Context, url: str):
     guild: Guild = ctx.guild
     voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
     voiceState: VoiceState = ctx.author.voice
+
     if voiceState == None:
         await ctx.send(content="您尚未連線至任何語音頻道")
         return
@@ -85,9 +93,20 @@ async def play(ctx: Context, url: str):
         return
     if voiceClient.channel != voiceState.channel:
         await ctx.send(content="您與機器人處於不同語音頻道\n請先使用 'leave' 指令再使用 'join' 指令\n或移動至機器人所在之語音頻道")
-    playingLists[guild.id].append(url)
+
+    urlType: str = url.split('?')[0].split('/')[-1]
+    if urlType == "watch":
+        playingLists[guild.id].append(url)
+    elif urlType == "playlist":
+        playlist = Playlist(url=url)
+        playingLists[guild.id] += playlist.video_urls
+    else:
+        await ctx.send("非YouTube影片或清單連結")
+        return
+
     if voiceClient.is_playing():
         return
+
     playNext(guild=guild)
 
 
@@ -112,12 +131,14 @@ async def skip(ctx: Context):
 @client.command(help="顯示音樂清單")
 async def list(ctx: Context):
     id = ctx.guild.id
+
     if id not in playingLists:
         await ctx.send(content="無音樂清單")
         return
     if len(playingLists[id]) == 0:
         await ctx.send(content="清單中無音樂")
         return
+
     result = ""
     for url in playingLists[id]:
         result += url + '\n'
