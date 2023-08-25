@@ -13,7 +13,7 @@ from pytube import YouTube
 from pytube.contrib.playlist import Playlist
 
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
-playingLists = {}  # dict[guildId, list]
+playQueues = {}  # dict[guildId, list]
 
 
 @client.event
@@ -36,7 +36,7 @@ async def join(ctx: Context):
         return
 
     await voiceState.channel.connect()
-    playingLists[guild.id] = []
+    playQueues[guild.id] = []
 
 
 @client.command(help="使機器人離開任何語音頻道")
@@ -49,9 +49,9 @@ async def leave(ctx: Context):
         await ctx.send(content="機器人尚未連線至任何語音頻道")
         return
 
-    playingLists[id] = []
+    playQueues[id] = []
     voiceClient.stop()
-    playingLists.pop(id)
+    playQueues.pop(id)
     await voiceClient.disconnect()
     filename = "music/" + str(id) + ".mp4"
     if exists(path=filename):
@@ -64,13 +64,13 @@ def playNext(guild: Guild):
     if exists(path=filename):
         remove(path=filename)
 
-    if id not in playingLists:
+    if id not in playQueues:
         return
-    if len(playingLists[id]) == 0:
+    if len(playQueues[id]) == 0:
         return
 
-    url = playingLists[id][0]
-    del playingLists[id][0]
+    url = playQueues[id][0]
+    del playQueues[id][0]
     try:
         YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
@@ -96,10 +96,10 @@ async def play(ctx: Context, url: str):
 
     urlType: str = url.split('?')[0].split('/')[-1]
     if urlType == "watch":
-        playingLists[guild.id].append(url)
+        playQueues[guild.id].append(url)
     elif urlType == "playlist":
         playlist = Playlist(url=url)
-        playingLists[guild.id] += playlist.video_urls
+        playQueues[guild.id] += playlist.video_urls
     else:
         await ctx.send("非YouTube影片或清單連結")
         return
@@ -132,27 +132,27 @@ async def skip(ctx: Context):
 async def list(ctx: Context):
     id = ctx.guild.id
 
-    if id not in playingLists:
+    if id not in playQueues:
         await ctx.send(content="無音樂清單")
         return
-    if len(playingLists[id]) == 0:
+    if len(playQueues[id]) == 0:
         await ctx.send(content="清單中無音樂")
         return
 
     result = ""
-    for url in playingLists[id]:
+    for url in playQueues[id]:
         result += url + '\n'
     await ctx.send(content=result)
 
 
 @client.command(help="打亂音樂清單")
 async def shuffle(ctx: Context):
-    random.shuffle(x=playingLists[ctx.guild.id])
+    random.shuffle(x=playQueues[ctx.guild.id])
 
 
 @client.command(help="清空音樂清單")
 async def clear(ctx: Context):
-    playingLists[ctx.guild.id] = []
+    playQueues[ctx.guild.id] = []
 
 
 def main():
