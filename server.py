@@ -138,6 +138,9 @@ async def list(ctx: Context):
     if len(playQueues[id]) == 0:
         await ctx.send(content="清單中無音樂")
         return
+    if 93 < len(playQueues[id]):
+        await ctx.send(content=f"共有{len(playQueues[id])}首音樂，無法列出所有連結")
+        return
 
     result = ""
     for url in playQueues[id]:
