@@ -13,7 +13,8 @@ from pytube import YouTube
 from pytube.contrib.playlist import Playlist
 
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
-playQueues = {}  # dict[guildId, list]
+playQueues = {}  # dict[guildId, list[url]]
+nowPlaying = {}  # dict[guildId, url]
 
 
 @client.event
@@ -27,6 +28,7 @@ async def on_ready():
 async def join(ctx: Context):
     voiceState: VoiceState = ctx.author.voice
     guild: Guild = ctx.guild
+    id: int = guild.id
 
     if voiceState == None:
         await ctx.send(content="您尚未連線至任何語音頻道")
@@ -36,7 +38,8 @@ async def join(ctx: Context):
         return
 
     await voiceState.channel.connect()
-    playQueues[guild.id] = []
+    playQueues[id] = []
+    nowPlaying[id] = ""
 
 
 @client.command(help="使機器人離開任何語音頻道")
@@ -52,6 +55,7 @@ async def leave(ctx: Context):
     playQueues[id] = []
     voiceClient.stop()
     playQueues.pop(id)
+    nowPlaying.pop(id)
     await voiceClient.disconnect()
     filename = "music/" + str(id) + ".mp4"
     if exists(path=filename):
@@ -74,6 +78,7 @@ def playNext(guild: Guild):
     try:
         YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+        nowPlaying[id] = url
         voiceClient.play(source=FFmpegPCMAudio(source=filename), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
@@ -108,6 +113,16 @@ async def play(ctx: Context, url: str):
         return
 
     playNext(guild=guild)
+
+
+@client.command(help="顯示當前音樂")
+async def show(ctx: Context):
+    guild: Guild = ctx.guild
+    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    if not voiceClient.is_playing():
+        await ctx.send("無播放中音樂")
+        return
+    await ctx.send(nowPlaying[guild.id])
 
 
 @client.command(help="顯示音樂清單")
