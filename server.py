@@ -102,12 +102,7 @@ async def play(ctx: Context, url: str):
     if voiceClient.channel != voiceState.channel:
         await ctx.send(content="您與機器人處於不同語音頻道\n請先使用 'leave' 指令再使用 'join' 指令\n或移動至機器人所在之語音頻道")
 
-    urlType: str = ""
-    try:
-        urlType = url.split('?')[0].split('/')[-1]
-    except Exception:
-        await ctx.send(content="連結無效")
-        return
+    urlType = url.split('?')[0].split('/')[-1]
     if urlType == "watch":
         playQueues[guild.id].append(url)
     elif urlType == "playlist":
