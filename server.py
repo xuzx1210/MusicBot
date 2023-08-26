@@ -88,7 +88,7 @@ def playNext(guild: Guild):
 
 
 @client.command(help="播放音樂，請空一格後輸入YouTube連結")
-async def play(ctx: Context, url: str):
+async def play(ctx: Context, url: str = ""):
     guild: Guild = ctx.guild
     voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
     voiceState: VoiceState = ctx.author.voice
@@ -101,6 +101,10 @@ async def play(ctx: Context, url: str):
         return
     if voiceClient.channel != voiceState.channel:
         await ctx.send(content="您與機器人處於不同語音頻道\n請先使用 'leave' 指令再使用 'join' 指令\n或移動至機器人所在之語音頻道")
+        return
+    if url == "":
+        await ctx.send(content="請輸入YouTube連結")
+        return
 
     urlType = url.split('?')[0].split('/')[-1]
     if urlType == "watch":
