@@ -115,7 +115,7 @@ async def play(ctx: Context, url: str = ""):
         await ctx.send(content="非YouTube影片或清單連結")
         return
 
-    if voiceClient.is_playing():
+    if voiceClient.is_playing() or voiceClient.is_paused():
         return
 
     playNext(guild=guild)
