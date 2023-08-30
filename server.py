@@ -18,9 +18,10 @@ client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(n
 
 class PlayingInfo():
     def __init__(self) -> None:
-        self.playQueue = []  # list[url]
-        self.nowPlaying = ""  # str
-        self.loop = False  # bool
+        self.playQueue: list[str] = []  # list[url]
+        self.current: str = ""  # str
+        self.loopSong = False  # bool
+        self.loopList = False  # bool
 
 
 guildsInfo: dict[int, PlayingInfo] = {}
@@ -80,12 +81,18 @@ def playNext(guild: Guild):
     if len(guildsInfo[id].playQueue) == 0:
         return
 
-    url = guildsInfo[id].playQueue[0]
-    del guildsInfo[id].playQueue[0]
+    url = ""
+    if guildsInfo[id].loopSong and guildsInfo[id].current != "":
+        url = guildsInfo[id].current
+    else:
+        url = guildsInfo[id].playQueue[0]
+        del guildsInfo[id].playQueue[0]
+    if guildsInfo[id].loopList and guildsInfo[id].current != "":
+        guildsInfo[id].playQueue.append(guildsInfo[id].current)
     try:
         YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
-        guildsInfo[id].nowPlaying = url
+        guildsInfo[id].current = url
         voiceClient.play(source=FFmpegPCMAudio(source=filename), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
@@ -128,29 +135,34 @@ async def play(ctx: Context, url: str = ""):
 
 @client.command(help="顯示當前音樂")
 async def show(ctx: Context):
-    guild: Guild = ctx.guild
-    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
     if not voiceClient.is_playing():
         await ctx.send(content="無播放中音樂")
         return
-    await ctx.send(content=guildsInfo[guild.id].nowPlaying)
+    id: int = ctx.guild.id
+    loopState = ""
+    if guildsInfo[id].loopSong:
+        loopState = "重播當前音樂中\n"
+    if guildsInfo[id].loopList:
+        loopState = "重播音樂清單中\n"
+    await ctx.send(content=loopState+guildsInfo[id].current)
 
 
 @client.command(help=f"顯示音樂清單，最多顯示{LIST_MAX_LENGTH}個連結")
 async def list(ctx: Context, nums: str = ""):
     id: int = ctx.guild.id
 
-    if id not in guildsInfo[id].playQueue:
+    if id not in guildsInfo:
         await ctx.send(content="無音樂清單")
         return
-    length = len(guildsInfo[id].playQueue)
-    if length == 0:
+    playQueueLength: int = len(guildsInfo[id].playQueue)
+    if playQueueLength == 0:
         await ctx.send(content="清單中無音樂")
         return
 
     if nums == "":
-        if LIST_MAX_LENGTH < length:
-            await ctx.send(content=f"清單中有{length}首音樂，無法列出所有連結")
+        if LIST_MAX_LENGTH < playQueueLength:
+            await ctx.send(content=f"清單中有{playQueueLength}首音樂，無法列出所有連結")
         else:
             result = ""
             for url in guildsInfo[id].playQueue:
@@ -167,7 +179,7 @@ async def list(ctx: Context, nums: str = ""):
     if length <= 0:
         await ctx.send(content="請輸入正整數")
         return
-    length = min(length, LIST_MAX_LENGTH, length)
+    length = min(length, LIST_MAX_LENGTH, playQueueLength)
 
     result: str = ""
     for i in range(length):
@@ -183,6 +195,40 @@ async def clear(ctx: Context):
 @client.command(help="打亂音樂清單")
 async def shuffle(ctx: Context):
     random.shuffle(x=guildsInfo[ctx.guild.id].playQueue)
+
+
+@client.command(help="重複一首音樂或整個清單，後接\"song\"或\"list\"")
+async def loop(ctx: Context, choice: str = ""):
+    if choice == "":
+        await ctx.send(content="請後接\"song\"或\"list\"")
+        return
+
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    if voiceClient == None:
+        await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
+        return
+
+    id: int = ctx.guild.id
+    if choice == "song":
+        guildsInfo[id].loopSong = True
+        guildsInfo[id].loopList = False
+    elif choice == "list":
+        guildsInfo[id].loopSong = False
+        guildsInfo[id].loopList = True
+    else:
+        await ctx.send(content="請後接\"song\"或\"list\"")
+
+
+@client.command(help="解除任何重複狀態")
+async def unloop(ctx: Context):
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    if voiceClient == None:
+        await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
+        return
+
+    id: int = ctx.guild.id
+    guildsInfo[id].loopSong = False
+    guildsInfo[id].loopList = False
 
 
 @client.command(help="暫停播放")
