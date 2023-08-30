@@ -12,12 +12,18 @@ from dotenv import load_dotenv
 from pytube import YouTube
 from pytube.contrib.playlist import Playlist
 
+LIST_MAX_LENGTH: int = 90
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
 
-playQueues: dict[int, list[str]] = {}  # dict[guildId, list[url]]
-nowPlaying: dict[int, str] = {}  # dict[guildId, url]
 
-MAX_LENGTH: int = 90
+class PlayingInfo():
+    def __init__(self) -> None:
+        self.playQueue = []  # list[url]
+        self.nowPlaying = ""  # str
+        self.loop = False  # bool
+
+
+guildsInfo: dict[int, PlayingInfo] = {}
 
 
 @client.event
@@ -41,8 +47,7 @@ async def join(ctx: Context):
         return
 
     await voiceState.channel.connect()
-    playQueues[id] = []
-    nowPlaying[id] = ""
+    guildsInfo[id] = PlayingInfo()
 
 
 @client.command(help="使機器人離開任何語音頻道")
@@ -55,10 +60,9 @@ async def leave(ctx: Context):
         await ctx.send(content="機器人尚未連線至任何語音頻道")
         return
 
-    playQueues[id] = []
+    guildsInfo[id].playQueue = []
     voiceClient.stop()
-    playQueues.pop(id)
-    nowPlaying.pop(id)
+    guildsInfo.pop(id)
     await voiceClient.disconnect()
     filename = "music/" + str(id) + ".mp4"
     if exists(path=filename):
@@ -71,17 +75,17 @@ def playNext(guild: Guild):
     if exists(path=filename):
         remove(path=filename)
 
-    if id not in playQueues:
+    if id not in guildsInfo:
         return
-    if len(playQueues[id]) == 0:
+    if len(guildsInfo[id].playQueue) == 0:
         return
 
-    url = playQueues[id][0]
-    del playQueues[id][0]
+    url = guildsInfo[id].playQueue[0]
+    del guildsInfo[id].playQueue[0]
     try:
         YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
-        nowPlaying[id] = url
+        guildsInfo[id].nowPlaying = url
         voiceClient.play(source=FFmpegPCMAudio(source=filename), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
@@ -90,6 +94,7 @@ def playNext(guild: Guild):
 @client.command(help="播放音樂，請空一格後輸入YouTube連結")
 async def play(ctx: Context, url: str = ""):
     guild: Guild = ctx.guild
+    id: int = guild.id
     voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
     voiceState: VoiceState = ctx.author.voice
 
@@ -108,9 +113,9 @@ async def play(ctx: Context, url: str = ""):
 
     urlType = url.split('?')[0].split('/')[-1]
     if urlType == "watch":
-        playQueues[guild.id].append(url)
+        guildsInfo[id].playQueue.append(url)
     elif urlType == "playlist":
-        playQueues[guild.id] += Playlist(url=url).video_urls
+        guildsInfo[id].playQueue += Playlist(url=url).video_urls
     else:
         await ctx.send(content="非YouTube影片或清單連結")
         return
@@ -128,26 +133,27 @@ async def show(ctx: Context):
     if not voiceClient.is_playing():
         await ctx.send(content="無播放中音樂")
         return
-    await ctx.send(content=nowPlaying[guild.id])
+    await ctx.send(content=guildsInfo[guild.id].nowPlaying)
 
 
-@client.command(help=f"顯示音樂清單，最多顯示{MAX_LENGTH}個連結")
+@client.command(help=f"顯示音樂清單，最多顯示{LIST_MAX_LENGTH}個連結")
 async def list(ctx: Context, nums: str = ""):
     id: int = ctx.guild.id
 
-    if id not in playQueues:
+    if id not in guildsInfo[id].playQueue:
         await ctx.send(content="無音樂清單")
         return
-    if len(playQueues[id]) == 0:
+    length = len(guildsInfo[id].playQueue)
+    if length == 0:
         await ctx.send(content="清單中無音樂")
         return
 
     if nums == "":
-        if MAX_LENGTH < len(playQueues[id]):
-            await ctx.send(content=f"清單中有{len(playQueues[id])}首音樂，無法列出所有連結")
+        if LIST_MAX_LENGTH < length:
+            await ctx.send(content=f"清單中有{length}首音樂，無法列出所有連結")
         else:
             result = ""
-            for url in playQueues[id]:
+            for url in guildsInfo[id].playQueue:
                 result += url + '\n'
             await ctx.send(content=result)
         return
@@ -161,22 +167,22 @@ async def list(ctx: Context, nums: str = ""):
     if length <= 0:
         await ctx.send(content="請輸入正整數")
         return
-    length = min(length, MAX_LENGTH, len(playQueues[id]))
+    length = min(length, LIST_MAX_LENGTH, length)
 
     result: str = ""
     for i in range(length):
-        result += playQueues[id][i] + '\n'
+        result += guildsInfo[id].playQueue[i] + '\n'
     await ctx.send(content=result)
 
 
 @client.command(help="清空音樂清單")
 async def clear(ctx: Context):
-    playQueues[ctx.guild.id] = []
+    guildsInfo[ctx.guild.id].playQueue = []
 
 
 @client.command(help="打亂音樂清單")
 async def shuffle(ctx: Context):
-    random.shuffle(x=playQueues[ctx.guild.id])
+    random.shuffle(x=guildsInfo[ctx.guild.id].playQueue)
 
 
 @client.command(help="暫停播放")
