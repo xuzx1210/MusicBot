@@ -9,8 +9,8 @@ from discord.member import VoiceState
 from discord.utils import get
 from discord.voice_client import VoiceClient
 from dotenv import load_dotenv
-from pytube import YouTube
-from pytube.contrib.playlist import Playlist
+from pytubefix import YouTube
+from pytubefix.contrib.playlist import Playlist
 
 LIST_MAX_LENGTH: int = 90
 MUSIC_FOLDER: str = "music/"
@@ -73,9 +73,10 @@ async def leave(ctx: Context):
 
 def playNext(guild: Guild):
     id: int = guild.id
-    filename: str = MUSIC_FOLDER + str(id) + ".mp4"
-    if exists(path=filename):
-        remove(path=filename)
+    filename: str = str(id) + ".mp4"
+    filepath: str = MUSIC_FOLDER + filename
+    if exists(path=filepath):
+        remove(path=filepath)
 
     if id not in guildPlayingInfoDict:
         return
@@ -86,14 +87,14 @@ def playNext(guild: Guild):
     try:
         url = info.playQueue[0]
         del info.playQueue[0]
-        YouTube(url=url).streams.filter(only_audio=True).first().download(filename=filename)
+        YouTube(url=url).streams.filter(only_audio=True).first().download(output_path=MUSIC_FOLDER, filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
         info.current = url
         if info.loopSong:
             info.playQueue.insert(0, url)
         if info.loopList:
             info.playQueue.append(url)
-        voiceClient.play(source=FFmpegPCMAudio(source=filename), after=lambda _: playNext(guild=guild))
+        voiceClient.play(source=FFmpegPCMAudio(source=filepath), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
 
