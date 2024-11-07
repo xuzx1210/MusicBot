@@ -87,7 +87,7 @@ def playNext(guild: Guild):
     try:
         url = info.playQueue[0]
         del info.playQueue[0]
-        YouTube(url=url).streams.filter(only_audio=True).first().download(output_path=MUSIC_FOLDER, filename=filename)
+        YouTube(url=url).streams.get_audio_only().download(output_path=MUSIC_FOLDER, filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
         info.current = url
         if info.loopSong:
