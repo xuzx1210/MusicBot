@@ -174,7 +174,7 @@ async def list(ctx: Context, nums: str = ""):
         else:
             result = ""
             for url in guildPlayingInfoDict[id].playQueue:
-                result += url + '\n'
+                result += YouTube(url=url).title + '\n'
             await ctx.send(content=result)
         return
 
