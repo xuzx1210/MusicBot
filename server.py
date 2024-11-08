@@ -120,13 +120,42 @@ async def play(ctx: Context, url: str = ""):
 
     urlType = url.split('?')[0].split('/')[-1]
     info: GuildPlayingInfo = guildPlayingInfoDict[guild.id]
-    if urlType == "watch":
-        info.playQueue.append(url)
-    elif urlType == "playlist":
+    if urlType == "playlist":
         info.playQueue += Playlist(url=url).video_urls
     else:
-        await ctx.send(content="非YouTube影片或清單連結")
+        info.playQueue.append(url)
+
+    if voiceClient.is_playing() or voiceClient.is_paused():
         return
+
+    playNext(guild=guild)
+
+
+@client.command(help="插播音樂，請空一格後輸入YouTube連結")
+async def intercut(ctx: Context, url: str = ""):
+    guild: Guild = ctx.guild
+    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    voiceState: VoiceState = ctx.author.voice
+
+    if voiceState == None:
+        await ctx.send(content="您尚未連線至任何語音頻道")
+        return
+    if voiceClient == None:
+        await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
+        return
+    if voiceClient.channel != voiceState.channel:
+        await ctx.send(content="您與機器人處於不同語音頻道\n請先使用 'leave' 指令再使用 'join' 指令\n或移動至機器人所在之語音頻道")
+        return
+    if url == "":
+        await ctx.send(content="請輸入YouTube連結")
+        return
+
+    urlType = url.split('?')[0].split('/')[-1]
+    info: GuildPlayingInfo = guildPlayingInfoDict[guild.id]
+    if urlType == "playlist":
+        info.playQueue = Playlist(url=url).video_urls + info.playQueue
+    else:
+        info.playQueue.insert(0, url)
 
     if voiceClient.is_playing() or voiceClient.is_paused():
         return
@@ -174,7 +203,10 @@ async def list(ctx: Context, nums: str = ""):
         else:
             result = ""
             for url in guildPlayingInfoDict[id].playQueue:
-                result += YouTube(url=url).title + '\n'
+                try:
+                    result += YouTube(url=url).title + '\n'
+                except:
+                    pass
             await ctx.send(content=result)
         return
 
