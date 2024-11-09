@@ -80,7 +80,12 @@ def playNext(guild: Guild):
 
     if id not in guildPlayingInfoDict:
         return
+
     info: GuildPlayingInfo = guildPlayingInfoDict[id]
+    if info.loopSong:
+        info.playQueue.insert(0, info.current)
+    if info.loopList:
+        info.playQueue.append(info.current)
     if len(info.playQueue) == 0:
         return
 
@@ -90,10 +95,6 @@ def playNext(guild: Guild):
         YouTube(url=url).streams.get_audio_only().download(output_path=MUSIC_FOLDER, filename=filename)
         voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
         info.current = url
-        if info.loopSong:
-            info.playQueue.insert(0, url)
-        if info.loopList:
-            info.playQueue.append(url)
         voiceClient.play(source=FFmpegPCMAudio(source=filepath), after=lambda _: playNext(guild=guild))
     except Exception:
         playNext(guild=guild)
@@ -184,6 +185,17 @@ async def show(ctx: Context):
 
 @client.command(help=f"顯示音樂清單，最多顯示{LIST_MAX_LENGTH}個連結")
 async def list(ctx: Context, nums: str = ""):
+    result: str = ""
+
+    info: GuildPlayingInfo = guildPlayingInfoDict[ctx.guild.id]
+
+    if info.loopSong:
+        result = "正在重複當前曲目\n"
+    elif info.loopList:
+        result = "正在重複音樂清單\n"
+    else:
+        result = "尚未設定重複功能\n"
+
     voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
     if voiceClient == None:
         await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
@@ -193,15 +205,18 @@ async def list(ctx: Context, nums: str = ""):
         await ctx.send(content="無音樂清單")
         return
     playQueueLength: int = len(guildPlayingInfoDict[id].playQueue)
-    if playQueueLength == 0:
+    if playQueueLength == 0 and not voiceClient.is_playing() and not voiceClient.is_paused():
         await ctx.send(content="清單中無音樂")
         return
 
-    result: str = ""
+    if voiceClient.is_playing() or voiceClient.is_paused():
+        result += '\n當前曲目：' + YouTube(url=guildPlayingInfoDict[ctx.guild.id].current).title + '\n'
 
     if nums == "":
-        for url in guildPlayingInfoDict[id].playQueue:
-            result += YouTube(url=url).title + '\n'
+        for idx, url in enumerate(guildPlayingInfoDict[id].playQueue):
+            result += '\n' + str(idx + 1) + ". " + YouTube(url=url).title
+            if LIST_MAX_LENGTH <= len(result):
+                break
     else:
         length: int = 0
         try:
@@ -215,7 +230,9 @@ async def list(ctx: Context, nums: str = ""):
         length = min(length, playQueueLength)
 
         for i in range(length):
-            result += YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title + '\n'
+            result += '\n' + str(i + 1) + ". " + YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title
+            if LIST_MAX_LENGTH <= len(result):
+                break
 
     result = result[:LIST_MAX_LENGTH]
 
