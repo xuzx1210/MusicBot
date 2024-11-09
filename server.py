@@ -23,6 +23,7 @@ class GuildPlayingInfo():
         self.current = ""  # str
         self.loopSong = False  # bool
         self.loopList = False  # bool
+        self.downloadSuccess = False  # bool
 
 
 guildPlayingInfoDict: dict[int, GuildPlayingInfo] = {}
@@ -82,9 +83,10 @@ def playNext(guild: Guild):
         return
 
     info: GuildPlayingInfo = guildPlayingInfoDict[id]
-    if info.loopSong:
+    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    if info.loopSong and info.downloadSuccess:
         info.playQueue.insert(0, info.current)
-    if info.loopList:
+    if info.loopList and info.downloadSuccess:
         info.playQueue.append(info.current)
     if len(info.playQueue) == 0:
         return
@@ -93,10 +95,11 @@ def playNext(guild: Guild):
         url = info.playQueue[0]
         del info.playQueue[0]
         YouTube(url=url).streams.get_audio_only().download(output_path=MUSIC_FOLDER, filename=filename)
-        voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
         info.current = url
+        info.downloadSuccess = True
         voiceClient.play(source=FFmpegPCMAudio(source=filepath), after=lambda _: playNext(guild=guild))
     except Exception:
+        info.downloadSuccess = False
         playNext(guild=guild)
 
 
@@ -185,17 +188,6 @@ async def show(ctx: Context):
 
 @client.command(help=f"顯示音樂清單，最多顯示{LIST_MAX_LENGTH}個連結")
 async def list(ctx: Context, nums: str = ""):
-    result: str = ""
-
-    info: GuildPlayingInfo = guildPlayingInfoDict[ctx.guild.id]
-
-    if info.loopSong:
-        result = "正在重複當前曲目\n"
-    elif info.loopList:
-        result = "正在重複音樂清單\n"
-    else:
-        result = "尚未設定重複功能\n"
-
     voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
     if voiceClient == None:
         await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
@@ -209,14 +201,29 @@ async def list(ctx: Context, nums: str = ""):
         await ctx.send(content="清單中無音樂")
         return
 
+    result: str = ""
+
+    info: GuildPlayingInfo = guildPlayingInfoDict[ctx.guild.id]
+
+    if info.loopSong:
+        result = "正在重複當前曲目\n"
+    elif info.loopList:
+        result = "正在重複音樂清單\n"
+    else:
+        result = "尚未設定重複功能\n"
+
     if voiceClient.is_playing() or voiceClient.is_paused():
         result += '\n當前曲目：' + YouTube(url=guildPlayingInfoDict[ctx.guild.id].current).title + '\n'
 
     if nums == "":
         for idx, url in enumerate(guildPlayingInfoDict[id].playQueue):
-            result += '\n' + str(idx + 1) + ". " + YouTube(url=url).title
-            if LIST_MAX_LENGTH <= len(result):
-                break
+            try:
+                title: str = YouTube(url=url).title
+                result += '\n' + str(idx + 1) + ". " + title
+                if LIST_MAX_LENGTH <= len(result):
+                    break
+            except Exception:
+                result += '\n' + str(idx + 1) + ". " + "無效的YouTube連結"
     else:
         length: int = 0
         try:
@@ -230,9 +237,13 @@ async def list(ctx: Context, nums: str = ""):
         length = min(length, playQueueLength)
 
         for i in range(length):
-            result += '\n' + str(i + 1) + ". " + YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title
-            if LIST_MAX_LENGTH <= len(result):
-                break
+            try:
+                title: str = YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title
+                result += '\n' + str(i + 1) + ". " + title
+                if LIST_MAX_LENGTH <= len(result):
+                    break
+            except Exception:
+                result += '\n' + str(i + 1) + ". " + "無效的YouTube連結"
 
     result = result[:LIST_MAX_LENGTH]
 
