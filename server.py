@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from pytubefix import YouTube
 from pytubefix.contrib.playlist import Playlist
 
-LIST_MAX_LENGTH: int = 90
+LIST_MAX_LENGTH: int = 2000
 MUSIC_FOLDER: str = "music/"
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
 
@@ -197,33 +197,28 @@ async def list(ctx: Context, nums: str = ""):
         await ctx.send(content="清單中無音樂")
         return
 
-    if nums == "":
-        if LIST_MAX_LENGTH < playQueueLength:
-            await ctx.send(content=f"清單中有{playQueueLength}首音樂，無法列出所有連結")
-        else:
-            result = ""
-            for url in guildPlayingInfoDict[id].playQueue:
-                try:
-                    result += YouTube(url=url).title + '\n'
-                except:
-                    pass
-            await ctx.send(content=result)
-        return
-
-    length: int = 0
-    try:
-        length = int(nums)
-    except ValueError:
-        await ctx.send(content="請輸入數字")
-        return
-    if length <= 0:
-        await ctx.send(content="請輸入正整數")
-        return
-    length = min(length, LIST_MAX_LENGTH, playQueueLength)
-
     result: str = ""
-    for i in range(length):
-        result += guildPlayingInfoDict[id].playQueue[i] + '\n'
+
+    if nums == "":
+        for url in guildPlayingInfoDict[id].playQueue:
+            result += YouTube(url=url).title + '\n'
+    else:
+        length: int = 0
+        try:
+            length = int(nums)
+        except ValueError:
+            await ctx.send(content="請輸入數字")
+            return
+        if length <= 0:
+            await ctx.send(content="請輸入正整數")
+            return
+        length = min(length, playQueueLength)
+
+        for i in range(length):
+            result += YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title + '\n'
+
+    result = result[:LIST_MAX_LENGTH]
+
     await ctx.send(content=result)
 
 
