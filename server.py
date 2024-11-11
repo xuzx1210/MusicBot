@@ -1,9 +1,11 @@
+import enum
 import random
 from os import getenv, remove
 from os.path import exists
 
 import discord.ext.commands as commands
 from discord import FFmpegPCMAudio, Game, Guild, Intents, Status
+from discord.ext import commands
 from discord.ext.commands.context import Context
 from discord.member import VoiceState
 from discord.utils import get
@@ -11,8 +13,9 @@ from discord.voice_client import VoiceClient
 from dotenv import load_dotenv
 from pytubefix import YouTube
 from pytubefix.contrib.playlist import Playlist
+from pytubefix.contrib.search import Filter, Search
 
-LIST_MAX_LENGTH: int = 2000
+LIST_MAX_LENGTH: int = 90
 MUSIC_FOLDER: str = "music/"
 client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(name=">help"), status=Status.online)
 
@@ -20,10 +23,11 @@ client = commands.Bot(command_prefix=">", intents=Intents.all(), activity=Game(n
 class GuildPlayingInfo():
     def __init__(self) -> None:
         self.playQueue = []  # list[url]
+        self.history = []  # list[title]
         self.current = ""  # str
         self.loopSong = False  # bool
         self.loopList = False  # bool
-        self.downloadSuccess = False  # bool
+        self.autoplay = False  # bool
 
 
 guildPlayingInfoDict: dict[int, GuildPlayingInfo] = {}
@@ -34,6 +38,24 @@ async def on_ready():
     print(f"伺服器數量：{len(client.guilds)}")
     for guild in client.guilds:
         print(f"    {guild.name}")
+
+
+@client.event
+async def on_message(message):
+    channel_id = 1303878058566090784
+    if message.author == client.user:
+        return
+
+    if message.channel.id == channel_id and "mygo" in message.content.lower():
+        ctx = await client.get_context(message)
+        await ctx.invoke(client.get_command('play'), url="https://www.youtube.com/playlist?list=PLnFV3UOvtJxtyw7bBh1dvz4o75TPoA1Eb")
+
+        guild: Guild = message.guild
+        info: GuildPlayingInfo = guildPlayingInfoDict[guild.id]
+        if info:
+            random.shuffle(info.playQueue[1:])
+
+    await client.process_commands(message)
 
 
 @client.command(help="使機器人加入您當前的語音頻道")
@@ -64,6 +86,7 @@ async def leave(ctx: Context):
         return
 
     guildPlayingInfoDict[id].playQueue = []
+    guildPlayingInfoDict[id].history = []
     voiceClient.stop()
     guildPlayingInfoDict.pop(id)
     await voiceClient.disconnect()
@@ -72,7 +95,55 @@ async def leave(ctx: Context):
         remove(path=filename)
 
 
-def playNext(guild: Guild):
+def get_recommend():
+    # Define a list of genres or keywords for music types
+    genres = ['jpop music', 'cpop music', 'kpop music', 'indie music', 'pop music', 'rock music', '獨立樂團']
+
+    def get_keyword_video(keyword: str):
+        f = {'type': Filter.get_type("Video"), 'sort_by': Filter.get_sort_by(random.choice(["Relevance", "View count"])),
+             'duration': Filter.get_duration(random.choice(["Under 4 minutes", "4 - 20 minutes"]))}
+        results = Search(keyword, filters=f)
+        videos = []
+        for i, video in enumerate(results.videos):
+            if i >= 2:  # Limit to 5 videos per search result
+                break
+            videos.append(video.watch_url)
+        return videos
+
+    # Fetch videos for all genres and combine the results
+    all_videos = []
+    for genre in genres:
+        genre_videos = get_keyword_video(genre)
+        all_videos.extend(genre_videos)
+
+    # If no videos are found, return a message
+    if not all_videos:
+        return
+
+    # Shuffle the combined list to randomize the selection
+    random.shuffle(all_videos)
+
+    # Select a single random video from the list
+    random_video = all_videos[0]
+    return random_video
+
+
+def remove_played_song(ctx: Context, guild: Guild):
+    info = guildPlayingInfoDict.get(guild.id)
+    if info:
+        if info.loopList and len(info.playQueue) > 0:
+            info.playQueue.append(info.playQueue[0])
+        if not info.loopSong and len(info.playQueue) > 0:
+            yt = YouTube(info.playQueue[0])
+            info.history.append(yt.title)
+            if (len(info.history) > 5):
+                del info.history[0]
+            del info.playQueue[0]
+
+    playNext(ctx=ctx, guild=guild)
+
+
+def playNext(ctx: Context, guild: Guild):
     id: int = guild.id
     filename: str = str(id) + ".mp4"
     filepath: str = MUSIC_FOLDER + filename
@@ -81,26 +152,24 @@ def playNext(guild: Guild):
 
     if id not in guildPlayingInfoDict:
         return
-
     info: GuildPlayingInfo = guildPlayingInfoDict[id]
-    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
-    if info.loopSong and info.downloadSuccess:
-        info.playQueue.insert(0, info.current)
-    if info.loopList and info.downloadSuccess:
-        info.playQueue.append(info.current)
     if len(info.playQueue) == 0:
-        return
+        if info.current and not info.autoplay:
+            recommended_url = get_recommend()
+            if recommended_url:
+                info.playQueue.append(recommended_url)
+            else:
+                return
 
     try:
         url = info.playQueue[0]
-        del info.playQueue[0]
-        YouTube(url=url).streams.get_audio_only().download(output_path=MUSIC_FOLDER, filename=filename)
+        yt = YouTube(url=url)
+        yt.streams.get_audio_only().download(output_path=MUSIC_FOLDER, filename=filename)
+        voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
         info.current = url
-        info.downloadSuccess = True
-        voiceClient.play(source=FFmpegPCMAudio(source=filepath), after=lambda _: playNext(guild=guild))
+        voiceClient.play(source=FFmpegPCMAudio(source=filepath), after=lambda _: remove_played_song(ctx=ctx, guild=guild))
     except Exception:
-        info.downloadSuccess = False
-        playNext(guild=guild)
+        playNext(ctx=ctx, guild=guild)
 
 
 @client.command(help="播放音樂，請空一格後輸入YouTube連結")
@@ -132,7 +201,7 @@ async def play(ctx: Context, url: str = ""):
     if voiceClient.is_playing() or voiceClient.is_paused():
         return
 
-    playNext(guild=guild)
+    playNext(ctx=ctx, guild=guild)
 
 
 @client.command(help="插播音樂，請空一格後輸入YouTube連結")
@@ -159,12 +228,55 @@ async def intercut(ctx: Context, url: str = ""):
     if urlType == "playlist":
         info.playQueue = Playlist(url=url).video_urls + info.playQueue
     else:
-        info.playQueue.insert(0, url)
+        info.playQueue.insert(1, url)
 
     if voiceClient.is_playing() or voiceClient.is_paused():
         return
 
     playNext(guild=guild)
+
+
+@client.command(help="搜尋並播放音樂，請空一格後輸入關鍵字")
+async def search(ctx: Context, *, keyword: str):
+    guild: Guild = ctx.guild
+    voiceClient: VoiceClient = get(client.voice_clients, guild=guild)
+    voiceState: VoiceState = ctx.author.voice
+
+    if voiceState == None:
+        await ctx.send(content="您尚未連線至任何語音頻道")
+        return
+    if voiceClient == None:
+        await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
+        return
+    if voiceClient.channel != voiceState.channel:
+        await ctx.send(content="您與機器人處於不同語音頻道\n請先使用 'leave' 指令再使用 'join' 指令\n或移動至機器人所在之語音頻道")
+        return
+
+    def get_keyword_video(keyword: str):
+        f = {'type': Filter.get_type("Video"), 'sort_by': Filter.get_sort_by("Relevance")}
+        results = Search(keyword, filters=f)
+        videos = []
+        for i, video in enumerate(results.videos):
+            if i >= 5:
+                break
+            videos.append({'title': video.title, 'url': video.watch_url})
+        return videos
+
+    # Send initial message
+    search_results = get_keyword_video(keyword)
+    result_str = "\n".join([f"{i+1}. {video['title']} " for i, video in enumerate(search_results)])
+    message = await ctx.send(content=f"搜尋結果：\n{result_str}\n請輸入編號 (1-5) 以選取要播放的影片")
+
+    def check(m):
+        return m.author == ctx.author and m.content.isdigit() and 1 <= int(m.content) <= 5
+
+    try:
+        # Wait for user selection
+        selection = await client.wait_for('message', check=check, timeout=30)
+        selected_video = search_results[int(selection.content) - 1]['url']
+        await play(ctx, url=selected_video)
+    except Exception as e:
+        await ctx.send(content="發生錯誤，請再試一次。")
 
 
 @client.command(help="顯示當前音樂")
@@ -186,6 +298,23 @@ async def show(ctx: Context):
     await ctx.send(content=loopState+info.current)
 
 
+@client.command(help=f"顯示歷史播放最多5首歌")
+async def history(ctx: Context):
+    voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
+    if voiceClient == None:
+        await ctx.send(content="機器人尚未連線至任何語音頻道\n請先使用 'join' 指令")
+        return
+    id: int = ctx.guild.id
+    playQueueLength: int = len(guildPlayingInfoDict[id].history)
+    if playQueueLength == 0:
+        await ctx.send(content="無歷史清單")
+        return
+    result: str = ""
+    for i, song in enumerate(guildPlayingInfoDict[id].history):
+        result += f'{i+1}' + '. ' + song + '\n'
+    await ctx.send(content=result)
+
+
 @client.command(help=f"顯示音樂清單，最多顯示{LIST_MAX_LENGTH}個連結")
 async def list(ctx: Context, nums: str = ""):
     voiceClient: VoiceClient = get(client.voice_clients, guild=ctx.guild)
@@ -197,56 +326,41 @@ async def list(ctx: Context, nums: str = ""):
         await ctx.send(content="無音樂清單")
         return
     playQueueLength: int = len(guildPlayingInfoDict[id].playQueue)
-    if playQueueLength == 0 and not voiceClient.is_playing() and not voiceClient.is_paused():
+    if playQueueLength == 0:
         await ctx.send(content="清單中無音樂")
         return
 
-    result: str = ""
-
-    info: GuildPlayingInfo = guildPlayingInfoDict[ctx.guild.id]
-
-    if info.loopSong:
-        result = "正在重複當前曲目\n"
-    elif info.loopList:
-        result = "正在重複音樂清單\n"
-    else:
-        result = "尚未設定重複功能\n"
-
-    if voiceClient.is_playing() or voiceClient.is_paused():
-        result += '\n當前曲目：' + YouTube(url=guildPlayingInfoDict[ctx.guild.id].current).title + '\n'
-
     if nums == "":
-        for idx, url in enumerate(guildPlayingInfoDict[id].playQueue):
-            try:
-                title: str = YouTube(url=url).title
-                result += '\n' + str(idx + 1) + ". " + title
-                if LIST_MAX_LENGTH <= len(result):
-                    break
-            except Exception:
-                result += '\n' + str(idx + 1) + ". " + "無效的YouTube連結"
-    else:
-        length: int = 0
-        try:
-            length = int(nums)
-        except ValueError:
-            await ctx.send(content="請輸入數字")
-            return
-        if length <= 0:
-            await ctx.send(content="請輸入正整數")
-            return
-        length = min(length, playQueueLength)
+        if LIST_MAX_LENGTH < playQueueLength:
+            await ctx.send(content=f"清單中有{playQueueLength}首音樂，無法列出所有連結")
+        else:
+            result = ""
+            for i, url in enumerate(guildPlayingInfoDict[id].playQueue):
+                if len(result) < 1930:
+                    yt = YouTube(url=url)
+                    result += f'{i+1}' + '. ' + yt.title + '\n'
+            await ctx.send(content=result)
+        return
 
-        for i in range(length):
-            try:
-                title: str = YouTube(url=guildPlayingInfoDict[id].playQueue[i]).title
-                result += '\n' + str(i + 1) + ". " + title
-                if LIST_MAX_LENGTH <= len(result):
-                    break
-            except Exception:
-                result += '\n' + str(i + 1) + ". " + "無效的YouTube連結"
+    length: int = 0
+    try:
+        length = int(nums)
+    except ValueError:
+        await ctx.send(content="請輸入數字")
+        return
+    if length <= 0:
+        await ctx.send(content="請輸入正整數")
+        return
+    length = min(length, LIST_MAX_LENGTH, playQueueLength)
 
-    result = result[:LIST_MAX_LENGTH]
-
+    result: str = ""
+    for i, url in enumerate(guildPlayingInfoDict[id].playQueue):
+        if i >= length:
+            break
+        else:
+            yt = YouTube(url=url)
+            if len(result) < 1930:
+                result += f'{i+1}' + '. ' + yt.title + '\n'
     await ctx.send(content=result)
 
 
